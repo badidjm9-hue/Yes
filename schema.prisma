@@ -1,0 +1,512 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id              String    @id @default(cuid())
+  name            String?
+  email           String    @unique
+  emailVerified   DateTime?
+  image           String?
+  role            Role      @default(USER)
+  phone           String?
+  dateOfBirth     DateTime?
+  nationality     String?
+  preferredCurrency String  @default("DZD")
+  loyaltyPoints   Int       @default(0)
+  totalBookings   Int       @default(0)
+  verified        Boolean   @default(false)
+  twoFactorEnabled Boolean  @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  accounts     Account[]
+  sessions     Session[]
+  bookings     Booking[]
+  reviews      Review[]
+  favorites    Favorite[]
+  notifications Notification[]
+  loyaltyHistory LoyaltyTransaction[]
+  referralCode  ReferralCode?
+  referrals     Referral[] @relation("Referrer")
+  referredBy    Referral?  @relation("Referred", fields: [referredById], references: [id])
+  activityLogs  ActivityLog[]
+  supportTickets SupportTicket[]
+  
+  @@map("users")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Hotel {
+  id               String   @id @default(cuid())
+  name             String
+  description      String   @db.Text
+  shortDescription String?
+  address          String
+  city             String
+  country          String   @default("Algeria")
+  postalCode       String?
+  latitude         Float
+  longitude        Float
+  phone            String?
+  email            String?
+  website          String?
+  starRating       Int      @default(1)
+  propertyType     PropertyType @default(HOTEL)
+  checkInTime      String   @default("15:00")
+  checkOutTime     String   @default("11:00")
+  isActive         Boolean  @default(true)
+  featured         Boolean  @default(false)
+  verified         Boolean  @default(false)
+  priceRange       PriceRange @default(BUDGET)
+  amenities        String[] // JSON array of amenities
+  images           String[] // JSON array of image URLs
+  policies         Json     // Cancellation policy, pet policy, etc.
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  rooms            Room[]
+  reviews          Review[]
+  bookings         Booking[]
+  favorites        Favorite[]
+  priceAlerts      PriceAlert[]
+  experiences      Experience[]
+  
+  @@map("hotels")
+}
+
+model Room {
+  id             String   @id @default(cuid())
+  hotelId        String
+  name           String
+  description    String   @db.Text
+  roomType       RoomType
+  maxGuests      Int
+  bedConfiguration String
+  roomSize       Float    // in square meters
+  amenities      String[] // JSON array
+  images         String[] // JSON array
+  basePrice      Float    // in DZD
+  discountPrice  Float?   // discounted price
+  available      Boolean  @default(true)
+  totalRooms     Int
+  bookedRooms    Int      @default(0)
+  features       String[] // Array of features like ["wifi", "ac", "tv"]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  hotel          Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  bookings       Booking[]
+  roomAvailability RoomAvailability[]
+  
+  @@map("rooms")
+}
+
+model RoomAvailability {
+  id        String   @id @default(cuid())
+  roomId    String
+  date      DateTime
+  available Boolean  @default(true)
+  price     Float    // dynamic pricing
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, date])
+  @@map("room_availability")
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  userId          String
+  hotelId         String
+  roomId          String
+  checkInDate     DateTime
+  checkOutDate    DateTime
+  guests          Int
+  nights          Int
+  totalAmount     Float         // in DZD
+  paidAmount      Float         @default(0)
+  currency        String        @default("DZD")
+  status          BookingStatus @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentMethod   String?
+  bookingReference String       @unique
+  guestName       String
+  guestEmail      String
+  guestPhone      String?
+  specialRequests String?
+  cancellationReason String?
+  cancelledAt     DateTime?
+  confirmedAt     DateTime?
+  qrCode          String        @unique
+  invoiceUrl      String?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  user            User          @relation(fields: [userId], references: [id])
+  hotel           Hotel         @relation(fields: [hotelId], references: [id])
+  room            Room          @relation(fields: [roomId], references: [id])
+  payments        Payment[]
+  
+  @@map("bookings")
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  bookingId     String
+  amount        Float
+  currency      String        @default("DZD")
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  transactionId String?
+  gateway       String?       // CCP, BaridiMob, Visa, etc.
+  gatewayRef    String?
+  failureReason String?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  
+  @@map("payments")
+}
+
+model Review {
+  id         String        @id @default(cuid())
+  userId     String
+  hotelId    String
+  rating     Int           // 1-5 stars
+  title      String?
+  comment    String        @db.Text
+  images     String[]      // JSON array of image URLs
+  verified   Boolean       @default(false) // verified stay
+  helpful    Int           @default(0)
+  reported   Boolean       @default(false)
+  status     ReviewStatus  @default(ACTIVE)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  user       User          @relation(fields: [userId], references: [id])
+  hotel      Hotel         @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, hotelId])
+  @@map("reviews")
+}
+
+model Favorite {
+  id        String   @id @default(cuid())
+  userId    String
+  hotelId   String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, hotelId])
+  @@map("favorites")
+}
+
+model LoyaltyTransaction {
+  id          String            @id @default(cuid())
+  userId      String
+  type        LoyaltyTransactionType
+  points      Int
+  description String
+  bookingId   String?
+  createdAt   DateTime          @default(now())
+
+  user        User              @relation(fields: [userId], references: [id])
+  booking     Booking?          @relation(fields: [bookingId], references: [id])
+  
+  @@map("loyalty_transactions")
+}
+
+model PriceAlert {
+  id        String   @id @default(cuid())
+  userId    String
+  hotelId   String
+  targetPrice Float
+  currency  String   @default("DZD")
+  active    Boolean  @default(true)
+  triggered Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hotel     Hotel    @relation(fields: [hotelId], references: [id], onDelete: Cascade)
+  
+  @@map("price_alerts")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String           @db.Text
+  data      Json?            // additional data
+  read      Boolean          @default(false)
+  sent      Boolean          @default(false)
+  sentAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("notifications")
+}
+
+model DiscountCode {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  type         DiscountType
+  value        Float    // percentage or fixed amount
+  minBookingAmount Float?
+  maxDiscount   Float?
+  usageLimit   Int?
+  usedCount    Int      @default(0)
+  active       Boolean  @default(true)
+  expiresAt    DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  @@map("discount_codes")
+}
+
+model Experience {
+  id          String   @id @default(cuid())
+  hotelId     String?
+  name        String
+  description String   @db.Text
+  category    String
+  duration    String
+  price       Float
+  currency    String   @default("DZD")
+  images      String[]
+  available   Boolean  @default(true)
+  rating      Float?
+  reviewCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  hotel       Hotel?   @relation(fields: [hotelId], references: [id], onDelete: SetNull)
+  
+  @@map("experiences")
+}
+
+model ReferralCode {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  code        String   @unique
+  uses        Int      @default(0)
+  maxUses     Int      @default(10)
+  rewardPoints Int     @default(500)
+  createdAt   DateTime @default(now())
+  
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  referrals   Referral[]
+  
+  @@map("referral_codes")
+}
+
+model Referral {
+  id           String   @id @default(cuid())
+  referrerId   String
+  referredId   String?
+  email        String
+  status       ReferralStatus @default(PENDING)
+  rewardGiven  Boolean  @default(false)
+  rewardPoints Int      @default(500)
+  createdAt    DateTime @default(now())
+
+  referrer     User     @relation("Referrer", fields: [referrerId], references: [id], onDelete: Cascade)
+  referred     User?    @relation("Referred", fields: [referredId], references: [id])
+  
+  @@map("referrals")
+}
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  resource    String
+  resourceId  String?
+  ipAddress   String?
+  userAgent   String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@map("activity_logs")
+}
+
+model SupportTicket {
+  id          String         @id @default(cuid())
+  userId      String
+  subject     String
+  message     String         @db.Text
+  status      TicketStatus   @default(OPEN)
+  priority    TicketPriority @default(MEDIUM)
+  assignedTo  String?
+  resolvedAt  DateTime?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("support_tickets")
+}
+
+// Enums
+enum Role {
+  USER
+  ADMIN
+  SUPER_ADMIN
+  HOTEL_OWNER
+}
+
+enum PropertyType {
+  HOTEL
+  APARTMENT
+  RESORT
+  VILLA
+  HOSTEL
+  GUESTHOUSE
+}
+
+enum RoomType {
+  SINGLE
+  DOUBLE
+  TWIN
+  DELUXE
+  SUITE
+  PRESIDENTIAL
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  CCP
+  BARIDIMOB
+  VISA
+  MASTERCARD
+  PAYPAL
+  BANK_TRANSFER
+}
+
+enum ReviewStatus {
+  ACTIVE
+  HIDDEN
+  DELETED
+  PENDING_MODERATION
+}
+
+enum PriceRange {
+  BUDGET
+  MODERATE
+  LUXURY
+  ULTRA_LUXURY
+}
+
+enum LoyaltyTransactionType {
+  EARNED
+  REDEEMED
+  BONUS
+  EXPIRED
+  ADJUSTED
+}
+
+enum NotificationType {
+  BOOKING_CONFIRMATION
+  BOOKING_CANCELLATION
+  PRICE_ALERT
+  REVIEW_REMINDER
+  LOYALTY_REWARD
+  REFERRAL_BONUS
+  SYSTEM
+  PROMOTIONAL
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+enum ReferralStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
